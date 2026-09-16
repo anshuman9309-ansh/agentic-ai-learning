@@ -1,0 +1,4 @@
+# No third-party dependencies yet.
+# Core LangChain
+langchain
+langchain-openai
