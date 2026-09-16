@@ -1,6 +1,10 @@
 import ast
+import os
 import operator
+from pathlib import Path
 
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 
 
@@ -54,6 +58,44 @@ def run_tests() -> None:
         assert actual_result == expected_result, f"{expression}: expected {expected_result}"
 
 
+def demonstrate_tool_calling() -> None:
+    """Ask an LLM to request the calculator, then execute that request once."""
+    # main.py is nested two folders below the repository root, so build the
+    # absolute path instead of relying on the folder where Python was started.
+    project_root = Path(__file__).resolve().parents[2]
+    load_dotenv(project_root / ".env")
+
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY is missing from the repository root .env file.")
+
+    model = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+
+    # bind_tools() gives the LLM the calculator's name, description, and input
+    # schema. It lets the model return a structured tool-call request.
+    # tool_choice forces this single-tool lesson to demonstrate a tool call.
+    model_with_tools = model.bind_tools([calculator], tool_choice="calculator")
+
+    user_request = "What is 125 multiplied by 48?"
+    response = model_with_tools.invoke(user_request)
+
+    # A tool_call is data returned by the LLM: the tool name and its arguments.
+    # The LLM does not run Python functions itself; it only asks our application
+    # to run one. An application can validate, authorize, and execute the call.
+    print(f"Model response: {response.content}")
+    print(f"Tool calls: {response.tool_calls}")
+
+    for tool_call in response.tool_calls:
+        print(f"Requested tool: {tool_call['name']}")
+        print(f"Tool arguments: {tool_call['args']}")
+
+        if tool_call["name"] == calculator.name:
+            calculator_result = calculator.invoke(tool_call["args"])
+            print(f"Calculator result: {calculator_result}")
+
+    # This is Tool Calling, not an Agent: there is no planning loop, no agent
+    # abstraction, and no tool result sent back to the LLM in this milestone.
+
+
 if __name__ == "__main__":
     run_tests()
-    print(calculator.invoke("25 * 17"))
+    demonstrate_tool_calling()
