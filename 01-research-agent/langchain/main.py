@@ -8,6 +8,7 @@ from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
+from langchain_tavily import TavilySearch
 
 
 _BINARY_OPERATORS = {
@@ -216,30 +217,42 @@ def run_calculator_agent() -> None:
 
 
 def run_multi_tool_agent() -> None:
-    """Run three examples that make the multi-tool agent's decisions visible."""
+    """Run tool-selection examples for the calculator, local knowledge, and web search."""
     project_root = Path(__file__).resolve().parents[2]
     load_dotenv(project_root / ".env")
 
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY is missing from the repository root .env file.")
+    if not os.getenv("TAVILY_API_KEY"):
+        raise RuntimeError("TAVILY_API_KEY is missing from the repository root .env file.")
 
     model = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+    # TavilySearch is already a LangChain tool. It reads TAVILY_API_KEY from
+    # the environment, so the key is never written in code.
+    web_search = TavilySearch(max_results=3, search_depth="basic")
     agent = create_agent(
         model=model,
-        tools=[calculator, knowledge_base],
+        tools=[calculator, knowledge_base, web_search],
         system_prompt=(
             "You are a beginner-friendly research assistant. Use calculator for "
-            "arithmetic. Use knowledge_base for questions about its supported AI "
-            "topics. If a question needs both factual knowledge and arithmetic, call "
-            "both relevant tools before answering. Base supported-topic explanations "
-            "on the knowledge_base result."
+            "arithmetic. Use knowledge_base for the known concepts RAG, AI Agents, "
+            "Agentic AI, LangChain, and CrewAI. Use tavily_search for current or "
+            "externally sourced information. Do not claim information is current "
+            "unless it came from tavily_search. When a question needs more than one "
+            "tool, call every relevant tool before answering. Base supported-topic "
+            "explanations on the knowledge_base result and cite search-result URLs "
+            "when using web information."
         ),
     )
 
     test_questions = [
         "What is 125 multiplied by 48?",
         "What is RAG?",
-        "Explain RAG and calculate 125 multiplied by 48.",
+        "What is the latest stable Python release?",
+        (
+            "Explain RAG, calculate 125 multiplied by 48, and find the latest "
+            "stable Python release."
+        ),
     ]
 
     for test_number, user_question in enumerate(test_questions, start=1):
