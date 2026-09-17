@@ -45,6 +45,47 @@ def calculator(expression: str) -> str:
         raise ValueError("Enter a valid arithmetic expression.") from error
 
 
+_LOCAL_KNOWLEDGE = {
+    "rag": (
+        "RAG (Retrieval-Augmented Generation) is a pattern where an AI system "
+        "retrieves relevant information from a knowledge source and gives that "
+        "information to an LLM to help generate a grounded answer."
+    ),
+    "ai agents": (
+        "AI Agents are systems that use an LLM to decide what actions to take, "
+        "such as calling tools, observing results, and producing an answer."
+    ),
+    "agentic ai": (
+        "Agentic AI describes AI systems that can pursue a goal through multiple "
+        "steps, including planning, tool use, and responding to intermediate results."
+    ),
+    "langchain": (
+        "LangChain is a framework for building LLM applications. It provides "
+        "building blocks for models, tools, agents, prompts, and workflows."
+    ),
+    "crewai": (
+        "CrewAI is a framework for coordinating multiple AI agents that have "
+        "different roles and collaborate on a task."
+    ),
+}
+
+
+@tool
+def knowledge_base(topic_or_question: str) -> str:
+    """Look up local learning information about RAG, AI Agents, Agentic AI, LangChain, or CrewAI. Use this tool when the user asks about one of those concepts; do not use it for arithmetic."""
+    normalized_question = topic_or_question.lower()
+
+    # Check longer names before shorter overlapping names, such as "AI Agents".
+    for topic in ("agentic ai", "ai agents", "langchain", "crewai", "rag"):
+        if topic in normalized_question:
+            return _LOCAL_KNOWLEDGE[topic]
+
+    available_topics = ", ".join(
+        ("RAG", "AI Agents", "Agentic AI", "LangChain", "CrewAI")
+    )
+    return f"Local knowledge is not available for that topic. Available topics: {available_topics}."
+
+
 def run_tests() -> None:
     """A few small checks for the calculator learning exercise."""
     test_cases = {
@@ -174,7 +215,65 @@ def run_calculator_agent() -> None:
     print(f"\nFinal answer: {final_answer}")
 
 
+def run_multi_tool_agent() -> None:
+    """Run three examples that make the multi-tool agent's decisions visible."""
+    project_root = Path(__file__).resolve().parents[2]
+    load_dotenv(project_root / ".env")
+
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY is missing from the repository root .env file.")
+
+    model = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+    agent = create_agent(
+        model=model,
+        tools=[calculator, knowledge_base],
+        system_prompt=(
+            "You are a beginner-friendly research assistant. Use calculator for "
+            "arithmetic. Use knowledge_base for questions about its supported AI "
+            "topics. If a question needs both factual knowledge and arithmetic, call "
+            "both relevant tools before answering. Base supported-topic explanations "
+            "on the knowledge_base result."
+        ),
+    )
+
+    test_questions = [
+        "What is 125 multiplied by 48?",
+        "What is RAG?",
+        "Explain RAG and calculate 125 multiplied by 48.",
+    ]
+
+    for test_number, user_question in enumerate(test_questions, start=1):
+        print(f"\n--- Test {test_number} ---")
+        print(f"User question:\n{user_question}")
+
+        # The complete state shows each model tool request and its ToolMessage.
+        result = agent.invoke({"messages": [{"role": "user", "content": user_question}]})
+
+        print("\nAgent tool calls:")
+        tool_calls_found = False
+        for message in result["messages"]:
+            if isinstance(message, AIMessage) and message.tool_calls:
+                tool_calls_found = True
+                for tool_call in message.tool_calls:
+                    print(f"- {tool_call['name']}: {tool_call['args']}")
+        if not tool_calls_found:
+            print("- No tool calls were made.")
+
+        print("\nTool results:")
+        tool_results_found = False
+        for message in result["messages"]:
+            if isinstance(message, ToolMessage):
+                tool_results_found = True
+                print(f"- {message.name}: {message.content}")
+        if not tool_results_found:
+            print("- No tool results were returned.")
+
+        final_answer = result["messages"][-1].content
+        print(f"\nFinal answer:\n{final_answer}")
+
+
 if __name__ == "__main__":
     # run_tests()
     # run_manual_tool_calling_loop()
-    run_calculator_agent()
+    # run_calculator_agent()
+    run_multi_tool_agent()
